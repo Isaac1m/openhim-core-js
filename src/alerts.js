@@ -210,7 +210,7 @@ const findTransactionsMaxRetried = (channel, alert, dateFrom, callback) =>
       status: 500,
       autoRetryAttempt: channel.autoRetryMaxAttempts
     }, {transactionID: 'transactionID'})
-    .hint({created: 1})
+    // .hint({created: 1})
     .exec((err, transactions) => {
       if (err) { return callback(err) }
       return callback(null, _.uniqWith(transactions, (a, b) => a.transactionID.equals(b.transactionID)))
@@ -271,7 +271,7 @@ const sendAlert = (channel, alert, user, transactions, contactHandler, done) =>
       logger.info(`Sending alert for user '${user.user}' using method '${user.method}'`)
 
       return getTransactionsForAlert(channel, alert, user, transactions, (err, transactionsForAlert) => {
-        if (err) {done(err)}
+        if (err) { done(err) }
         let template = statusTemplate(transactionsForAlert, channel, alert)
         if (alert.condition === 'auto-retry-max-attempted') {
           template = maxRetriesTemplate(transactionsForAlert, channel, alert)
