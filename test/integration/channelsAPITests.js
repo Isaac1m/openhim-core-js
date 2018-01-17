@@ -16,6 +16,7 @@ import should from 'should'
 import { ObjectId } from 'mongodb'
 import { config } from '../../src/config'
 import { ClientModelAPI } from '../../src/model/clients'
+import { ChannelModel } from '../../src/model/index';
 
 const { SERVER_PORTS } = constants
 let sandbox = sinon.createSandbox()
@@ -66,6 +67,10 @@ describe('API Integration Tests', () => {
       await testUtils.setupTestUsers()
       await promisify(server.start)({ apiPort: SERVER_PORTS.apiPort, tcpHttpReceiverPort: SERVER_PORTS.tcpHttpReceiverPort })
       authDetails = await testUtils.getAuthDetails()
+      await Promise.all([
+        TransactionModelAPI.remove(),
+        ChannelModelAPI.remove()
+      ])
     })
 
     after(async () => {
@@ -534,6 +539,139 @@ describe('API Integration Tests', () => {
         res.text.should.eql("Channel methods can't be repeated. Repeated methods are GET, POST")
         const channelCount = await ChannelModelAPI.count({ name: methodChannelDocRejected.name })
         channelCount.should.eql(0)
+      })
+
+      it('will reject a channel with a maxBodyAge set if the request or response is not', async () => {
+        const methodChannelDoc = {
+          name: 'maxBodyAgeRejected',
+          urlPattern: 'test/method',
+          maxBodyAgeDays: 5,
+          routes: [{
+            name: 'test route',
+            host: 'localhost',
+            port: 9876,
+            primary: true
+          }]
+        }
+
+        await request(constants.BASE_URL)
+          .post('/channels')
+          .set('auth-username', testUtils.rootUser.email)
+          .set('auth-ts', authDetails.authTS)
+          .set('auth-salt', authDetails.authSalt)
+          .set('auth-token', authDetails.authToken)
+          .send(methodChannelDoc)
+          .expect(400)
+
+        const channelCount = await ChannelModelAPI.count({ name: methodChannelDoc.name })
+        channelCount.should.eql(0)
+      })
+
+      it('will reject a channel with a maxBodyAge greater than 36500', async () => {
+        const methodChannelDoc = {
+          name: 'maxBodyAgeOver',
+          urlPattern: 'test/method',
+          maxBodyAgeDays: 36501,
+          requestBody: true,
+          routes: [{
+            name: 'test route',
+            host: 'localhost',
+            port: 9876,
+            primary: true
+          }]
+        }
+
+        await request(constants.BASE_URL)
+          .post('/channels')
+          .set('auth-username', testUtils.rootUser.email)
+          .set('auth-ts', authDetails.authTS)
+          .set('auth-salt', authDetails.authSalt)
+          .set('auth-token', authDetails.authToken)
+          .send(methodChannelDoc)
+          .expect(400)
+
+        const channelCount = await ChannelModelAPI.count({ name: methodChannelDoc.name })
+        channelCount.should.eql(0)
+      })
+
+      it('will create a channel with a maxBodyAge', async () => {
+        const methodChannelDoc = {
+          name: 'maxBodyAge',
+          urlPattern: 'test/method',
+          maxBodyAgeDays: 5,
+          requestBody: true,
+          responseBody: true,
+          routes: [{
+            name: 'test route',
+            host: 'localhost',
+            port: 9876,
+            primary: true
+          }]
+        }
+
+        await request(constants.BASE_URL)
+          .post('/channels')
+          .set('auth-username', testUtils.rootUser.email)
+          .set('auth-ts', authDetails.authTS)
+          .set('auth-salt', authDetails.authSalt)
+          .set('auth-token', authDetails.authToken)
+          .send(methodChannelDoc)
+          .expect(201)
+
+        const channel = await ChannelModelAPI.findOne({ name: methodChannelDoc.name })
+        channel.maxBodyAgeDays.should.eql(5)
+      })
+
+      it(`will create a channel with a timeout`, async () => {
+        const timeoutChannelDoc = {
+          name: 'timeout',
+          urlPattern: 'test/method',
+          timeout: 10,
+          routes: [{
+            name: 'test route',
+            host: 'localhost',
+            port: 9876,
+            primary: true
+          }]
+        }
+
+        await request(constants.BASE_URL)
+          .post('/channels')
+          .set('auth-username', testUtils.rootUser.email)
+          .set('auth-ts', authDetails.authTS)
+          .set('auth-salt', authDetails.authSalt)
+          .set('auth-token', authDetails.authToken)
+          .send(timeoutChannelDoc)
+          .expect(201)
+
+        const channel = await ChannelModelAPI.findOne({ name: timeoutChannelDoc.name })
+        channel.timeout.should.eql(10)
+      })
+
+      it(`will reject a channel with a timeout with negative value`, async () => {
+        const timeoutChannelDoc = {
+          name: 'timeout',
+          urlPattern: 'test/method',
+          timeout: -1,
+          routes: [{
+            name: 'test route',
+            host: 'localhost',
+            port: 9876,
+            primary: true
+          }]
+        }
+
+        await request(constants.BASE_URL)
+          .post('/channels')
+          .set('auth-username', testUtils.rootUser.email)
+          .set('auth-ts', authDetails.authTS)
+          .set('auth-salt', authDetails.authSalt)
+          .set('auth-token', authDetails.authToken)
+          .send(timeoutChannelDoc)
+          .expect(400)
+
+        const channel = await ChannelModelAPI.findOne({ name: timeoutChannelDoc.name })
+        should(channel).null()
       })
     })
 
@@ -1127,6 +1265,296 @@ describe('API Integration Tests', () => {
         channelCount.should.eql(1)
         const channel = await ChannelModelAPI.findById(channelId)
         channel.methods.length.should.eql(0)
+      })
+
+      it(`should fail to update a channel with maxBodyAgeDays if requestBody nor responseBody is true`, async () => {
+        const methodChannelDoc = {
+          name: 'method channel',
+          urlPattern: 'test/method',
+          routes: [{
+            name: 'test route',
+            host: 'localhost',
+            port: 9876,
+            primary: true
+          }],
+          updatedBy: {
+            id: new ObjectId(),
+            name: 'Test'
+          }
+        }
+
+        const { _id: channelId } = await new ChannelModelAPI(methodChannelDoc).save()
+
+        await request(constants.BASE_URL)
+          .put(`/channels/${channelId}`)
+          .set('auth-username', testUtils.rootUser.email)
+          .set('auth-ts', authDetails.authTS)
+          .set('auth-salt', authDetails.authSalt)
+          .set('auth-token', authDetails.authToken)
+          .send({ maxBodyAgeDays: 2 })
+          .expect(400)
+
+        const channel = await ChannelModelAPI.findById(channelId)
+        should(channel.maxBodyAgeDays == null).true()
+      })
+
+      it(`should update the channel with maxBodyAgeDays`, async () => {
+        const methodChannelDoc = {
+          name: 'method channel',
+          urlPattern: 'test/method',
+          requestBody: true,
+          routes: [{
+            name: 'test route',
+            host: 'localhost',
+            port: 9876,
+            primary: true
+          }],
+          updatedBy: {
+            id: new ObjectId(),
+            name: 'Test'
+          }
+        }
+
+        const { _id: channelId } = await new ChannelModelAPI(methodChannelDoc).save()
+
+        await request(constants.BASE_URL)
+          .put(`/channels/${channelId}`)
+          .set('auth-username', testUtils.rootUser.email)
+          .set('auth-ts', authDetails.authTS)
+          .set('auth-salt', authDetails.authSalt)
+          .set('auth-token', authDetails.authToken)
+          .send({ maxBodyAgeDays: 2 })
+          .expect(200)
+
+        const channel = await ChannelModelAPI.findById(channelId)
+        channel.maxBodyAgeDays.should.eql(2)
+      })
+
+      it(`should fail to update the channel with maxBodyAgeDays with a negative value`, async () => {
+        const methodChannelDoc = {
+          name: 'method channel',
+          urlPattern: 'test/method',
+          requestBody: true,
+          routes: [{
+            name: 'test route',
+            host: 'localhost',
+            port: 9876,
+            primary: true
+          }],
+          updatedBy: {
+            id: new ObjectId(),
+            name: 'Test'
+          }
+        }
+
+        const { _id: channelId } = await new ChannelModelAPI(methodChannelDoc).save()
+
+        await request(constants.BASE_URL)
+          .put(`/channels/${channelId}`)
+          .set('auth-username', testUtils.rootUser.email)
+          .set('auth-ts', authDetails.authTS)
+          .set('auth-salt', authDetails.authSalt)
+          .set('auth-token', authDetails.authToken)
+          .send({ maxBodyAgeDays: -1 })
+          .expect(400)
+
+        const channel = await ChannelModelAPI.findById(channelId)
+        channel.should.not.property('maxBodyAge')
+      })
+
+      it(`should fail to update the channel with maxBodyAgeDays a value greater than 36500`, async () => {
+        const methodChannelDoc = {
+          name: 'method channel',
+          urlPattern: 'test/method',
+          requestBody: true,
+          routes: [{
+            name: 'test route',
+            host: 'localhost',
+            port: 9876,
+            primary: true
+          }],
+          updatedBy: {
+            id: new ObjectId(),
+            name: 'Test'
+          }
+        }
+
+        const { _id: channelId } = await new ChannelModelAPI(methodChannelDoc).save()
+
+        await request(constants.BASE_URL)
+          .put(`/channels/${channelId}`)
+          .set('auth-username', testUtils.rootUser.email)
+          .set('auth-ts', authDetails.authTS)
+          .set('auth-salt', authDetails.authSalt)
+          .set('auth-token', authDetails.authToken)
+          .send({ maxBodyAgeDays: 36501 })
+          .expect(400)
+
+        const channel = await ChannelModelAPI.findById(channelId)
+        channel.should.not.property('maxBodyAge')
+      })
+
+      it(`should be able to remove the maxBodyAgeDays value`, async () => {
+        const methodChannelDoc = {
+          name: 'method channel',
+          urlPattern: 'test/method',
+          maxBodyAgeDays: 1,
+          routes: [{
+            name: 'test route',
+            host: 'localhost',
+            port: 9876,
+            primary: true
+          }],
+          updatedBy: {
+            id: new ObjectId(),
+            name: 'Test'
+          }
+        }
+
+        const { _id: channelId } = await new ChannelModelAPI(methodChannelDoc).save()
+
+        await request(constants.BASE_URL)
+          .put(`/channels/${channelId}`)
+          .set('auth-username', testUtils.rootUser.email)
+          .set('auth-ts', authDetails.authTS)
+          .set('auth-salt', authDetails.authSalt)
+          .set('auth-token', authDetails.authToken)
+          .send({ maxBodyAgeDays: null })
+          .expect(200)
+
+        const channel = await ChannelModelAPI.findById(channelId)
+        channel.should.not.property('maxBodyAge')
+      })
+
+      it(`will clear the lastBodyCleared if the maxBodyAgeDays is cleared`, async () => {
+        // if the maxBodyAgeDays differ then clear the lastTime it was cleared
+        const methodChannelDoc = {
+          name: 'method channel',
+          urlPattern: 'test/method',
+          requestBody: true,
+          maxBodyAgeDays: 1,
+          lastBodyCleared: new Date(),
+          routes: [{
+            name: 'test route',
+            host: 'localhost',
+            port: 9876,
+            primary: true
+          }],
+          updatedBy: {
+            id: new ObjectId(),
+            name: 'Test'
+          }
+        }
+
+        const { _id: channelId } = await new ChannelModelAPI(methodChannelDoc).save()
+
+        await request(constants.BASE_URL)
+          .put(`/channels/${channelId}`)
+          .set('auth-username', testUtils.rootUser.email)
+          .set('auth-ts', authDetails.authTS)
+          .set('auth-salt', authDetails.authSalt)
+          .set('auth-token', authDetails.authToken)
+          .send({ maxBodyAgeDays: 2 })
+          .expect(200)
+
+        const channel = await ChannelModelAPI.findById(channelId)
+        channel.should.property('lastBodyCleared', undefined)
+      })
+
+      it('will update a timeout', async () => {
+        const timeoutChannelDoc = {
+          name: 'timeout',
+          urlPattern: 'test/method',
+          timeout: 10,
+          routes: [{
+            name: 'test route',
+            host: 'localhost',
+            port: 9876,
+            primary: true
+          }],
+          updatedBy: {
+            id: new ObjectId(),
+            name: 'Test'
+          }
+        }
+
+        const { _id: channelId } = await new ChannelModelAPI(timeoutChannelDoc).save()
+
+        await request(constants.BASE_URL)
+          .put(`/channels/${channelId}`)
+          .set('auth-username', testUtils.rootUser.email)
+          .set('auth-ts', authDetails.authTS)
+          .set('auth-salt', authDetails.authSalt)
+          .set('auth-token', authDetails.authToken)
+          .send({ timeout: 9 })
+          .expect(200)
+
+        const channel = await ChannelModelAPI.findById(channelId)
+        channel.timeout.should.eql(9)
+      })
+
+      it('will clear a timeout', async () => {
+        const timeoutChannelDoc = {
+          name: 'timeoutUpdate',
+          urlPattern: 'test/method',
+          timeout: 10,
+          routes: [{
+            name: 'test route',
+            host: 'localhost',
+            port: 9876,
+            primary: true
+          }],
+          updatedBy: {
+            id: new ObjectId(),
+            name: 'Test'
+          }
+        }
+
+        const { _id: channelId } = await new ChannelModelAPI(timeoutChannelDoc).save()
+
+        await request(constants.BASE_URL)
+          .put(`/channels/${channelId}`)
+          .set('auth-username', testUtils.rootUser.email)
+          .set('auth-ts', authDetails.authTS)
+          .set('auth-salt', authDetails.authSalt)
+          .set('auth-token', authDetails.authToken)
+          .send({ timeout: null })
+          .expect(200)
+
+        const channel = await ChannelModelAPI.findById(channelId)
+        should(channel.timeout).null()
+      })
+
+      it('will reject a timeout that is invalid', async () => {
+        const timeoutChannelDoc = {
+          name: 'timeout',
+          urlPattern: 'test/method',
+          timeout: 10,
+          routes: [{
+            name: 'test route',
+            host: 'localhost',
+            port: 9876,
+            primary: true
+          }],
+          updatedBy: {
+            id: new ObjectId(),
+            name: 'Test'
+          }
+        }
+
+        const { _id: channelId } = await new ChannelModelAPI(timeoutChannelDoc).save()
+
+        await request(constants.BASE_URL)
+          .put(`/channels/${channelId}`)
+          .set('auth-username', testUtils.rootUser.email)
+          .set('auth-ts', authDetails.authTS)
+          .set('auth-salt', authDetails.authSalt)
+          .set('auth-token', authDetails.authToken)
+          .send({ timeout: -1 })
+          .expect(400)
+
+        const channel = await ChannelModelAPI.findById(channelId)
+        channel.timeout.should.eql(10)
       })
     })
 

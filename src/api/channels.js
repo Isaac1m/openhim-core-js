@@ -12,6 +12,9 @@ import { config } from '../config'
 
 const { ChannelModel } = Channels
 
+const MAX_BODY_AGE_MESSAGE = `Channel property maxBodyAgeDays has to be a number that's valid and requestBody or responseBody must be true.`
+const TIMEOUT_SECONDS_MESSAGE = `Channel property timeoutSeconds has to be a number greater than 1 and less than an 3600`
+
 config.polling = config.get('polling')
 
 function isPathValid (channel) {
@@ -66,12 +69,31 @@ export function validateMethod (channel) {
   }, {})
 
   const repeats = Object.keys(mapCount)
-      .filter(k => mapCount[k] > 1)
-      .sort()
+    .filter(k => mapCount[k] > 1)
+    .sort()
   if (repeats.length > 0) {
     return `Channel methods can't be repeated. Repeated methods are ${repeats.join(', ')}`
   }
+}
 
+export function isTimeoutValid (channel) {
+  if (channel.timeout == null) {
+    return true
+  }
+
+  return typeof channel.timeout === 'number' && channel.timeout > 0 && channel.timeout <= 3600000
+}
+
+export function isMaxBodyDaysValid (channel) {
+  if (channel.maxBodyAgeDays == null) {
+    return true
+  }
+
+  if (!channel.requestBody && !channel.responseBody) {
+    return false
+  }
+
+  return typeof channel.maxBodyAgeDays === 'number' && channel.maxBodyAgeDays > 0 && channel.maxBodyAgeDays < 36500
 }
 
 /*
@@ -113,6 +135,12 @@ export async function addChannel (ctx) {
       return
     }
 
+    if (!isTimeoutValid(channel)) {
+      ctx.body = TIMEOUT_SECONDS_MESSAGE
+      ctx.status = 400
+      return
+    }
+
     const numPrimaries = routerMiddleware.numberOfPrimaryRoutes(channel.routes)
     if (numPrimaries === 0) {
       ctx.body = 'Channel must have a primary route'
@@ -121,6 +149,12 @@ export async function addChannel (ctx) {
     }
     if (numPrimaries > 1) {
       ctx.body = 'Channel cannot have a multiple primary routes'
+      ctx.status = 400
+      return
+    }
+
+    if (!isMaxBodyDaysValid(channelData)) {
+      ctx.body = MAX_BODY_AGE_MESSAGE
       ctx.status = 400
       return
     }
@@ -220,7 +254,10 @@ function processPostUpdateTriggers (channel) {
 }
 
 async function findChannelByIdAndUpdate (id, channelData) {
-  const channel = await ChannelModel.findById(id).exec()
+  const channel = await ChannelModel.findById(id)
+  if (channelData.maxBodyAgeDays != null && channel.maxBodyAgeDays != null && channelData.maxBodyAgeDays !== channel.maxBodyAgeDays) {
+    channelData.lastBodyCleared = undefined
+  }
   channel.set(channelData)
   return channel.save()
 }
@@ -241,6 +278,9 @@ export async function updateChannel (ctx, channelId) {
 
   // Set the user updating the channel for auditing purposes
   channelData.updatedBy = utils.selectAuditFields(ctx.authenticated)
+  const updatedChannel = await ChannelModel.findById(id)
+  // This is so you can see how the channel will look as a whole before saving
+  updatedChannel.set(channelData)
 
   if (!utils.isNullOrWhitespace(channelData.type) && utils.isNullOrEmpty(channelData.methods)) {
     // Empty the methods if the type has changed from http
@@ -248,9 +288,8 @@ export async function updateChannel (ctx, channelId) {
       channelData.methods = []
     }
   } else {
-    const currentChannel = await ChannelModel.findById(id)
-    const { type = currentChannel.type } = channelData
-    let { methods = currentChannel.methods } = channelData
+    const { type } = updatedChannel
+    let { methods } = updatedChannel
     let methodValidation = validateMethod({ type, methods })
 
     if (methodValidation != null) {
@@ -258,6 +297,12 @@ export async function updateChannel (ctx, channelId) {
       ctx.status = 400
       return
     }
+  }
+
+  if (!isTimeoutValid(channelData)) {
+    ctx.body = TIMEOUT_SECONDS_MESSAGE
+    ctx.status = 400
+    return
   }
 
   // Ignore _id if it exists, user cannot change the internal id
@@ -288,6 +333,18 @@ export async function updateChannel (ctx, channelId) {
       ctx.status = 400
       return
     }
+  }
+
+  if (!isTimeoutValid(updatedChannel)) {
+    ctx.body = TIMEOUT_SECONDS_MESSAGE
+    ctx.status = 400
+    return
+  }
+
+  if (!isMaxBodyDaysValid(updatedChannel)) {
+    ctx.body = MAX_BODY_AGE_MESSAGE
+    ctx.status = 400
+    return
   }
 
   try {

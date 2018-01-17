@@ -1,13 +1,14 @@
 import SDC from 'statsd-client'
 import os from 'os'
 import logger from 'winston'
-import Q from 'q'
 import _ from 'lodash'
 import * as transactions from '../model/transactions'
 import * as autoRetryUtils from '../autoRetry'
 import * as utils from '../utils'
 import { config } from '../config'
 import * as stats from '../stats'
+import * as metrics from '../metrics'
+import { promisify } from 'util'
 
 config.statsd = config.get('statsd')
 const statsdServer = config.get('statsd')
@@ -111,7 +112,8 @@ export function storeResponse (ctx, done) {
 
   const update = {
     response: res,
-    error: ctx.error
+    error: ctx.error,
+    orchestrations: []
   }
 
   utils.enforceMaxBodiesSize(ctx, update.response)
@@ -123,14 +125,14 @@ export function storeResponse (ctx, done) {
 
   if (ctx.mediatorResponse) {
     if (ctx.mediatorResponse.orchestrations) {
-      update.orchestrations = ctx.mediatorResponse.orchestrations
-      for (const orch of Array.from(update.orchestrations)) {
-        if ((orch.request != null ? orch.request.body : undefined) != null) { utils.enforceMaxBodiesSize(ctx, orch.request) }
-        if ((orch.response != null ? orch.response.body : undefined) != null) { utils.enforceMaxBodiesSize(ctx, orch.response) }
-      }
+      update.orchestrations.push(...truncateOrchestrationBodies(ctx, ctx.mediatorResponse.orchestrations))
     }
 
     if (ctx.mediatorResponse.properties) { update.properties = ctx.mediatorResponse.properties }
+  }
+
+  if (ctx.orchestrations) {
+    update.orchestrations.push(...truncateOrchestrationBodies(ctx, ctx.orchestrations))
   }
 
   return transactions.TransactionModel.findOneAndUpdate({_id: ctx.transactionId}, update, {runValidators: true}, (err, tx) => {
@@ -144,6 +146,15 @@ export function storeResponse (ctx, done) {
     }
     logger.info(`stored primary response for ${tx._id}`)
     return done()
+  })
+}
+
+function truncateOrchestrationBodies (ctx, orchestrations) {
+  return orchestrations.map(orch => {
+    const truncatedOrchestration = Object.assign({}, orch)
+    if (truncatedOrchestration.request && truncatedOrchestration.request.body) { utils.enforceMaxBodiesSize(ctx, truncatedOrchestration.request) }
+    if (truncatedOrchestration.response && truncatedOrchestration.response.body) { utils.enforceMaxBodiesSize(ctx, truncatedOrchestration.response) }
+    return truncatedOrchestration
   })
 }
 
@@ -231,7 +242,7 @@ export function setFinalStatus (ctx, callback) {
 
     if (_.isEmpty(update)) { return callback(tx) } // nothing to do
 
-    transactions.TransactionModel.findByIdAndUpdate(transactionId, update, {}, (err, tx) => {
+    transactions.TransactionModel.findByIdAndUpdate(transactionId, update, {new: true}, (err, tx) => {
       if (err) { return callback(err) }
       callback(tx)
 
@@ -244,6 +255,12 @@ export function setFinalStatus (ctx, callback) {
         stats.incrementTransactionCount(ctx, () => { })
         return stats.measureTransactionDuration(ctx, () => { })
       }
+
+      try {
+        metrics.recordTransactionMetrics(tx)
+      } catch (err) {
+        logger.error('Recording transaction metrics failed', err)
+      }
     })
   })
 }
@@ -251,7 +268,7 @@ export function setFinalStatus (ctx, callback) {
 export async function koaMiddleware (ctx, next) {
   let startTime
   if (statsdServer.enabled) { startTime = new Date() }
-  const saveTransaction = Q.denodeify(storeTransaction)
+  const saveTransaction = promisify(storeTransaction)
   await saveTransaction(ctx)
   if (statsdServer.enabled) { sdc.timing(`${domain}.messageStoreMiddleware.storeTransaction`, startTime) }
   await next()

@@ -15,10 +15,11 @@ packaging/.vagrant
 packaging/builds
 .otto
 *.log
-Vagrantfile
 .DS_Store
 .vscode
+.vagrant
 artillery
 
 coverage
 .nyc_output
+.data
