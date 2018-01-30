@@ -17,22 +17,21 @@ For maximum reusability and modifiability, we suggest that mediators be split in
 
 ![](/_static/mediators/mediator-structure.png)
 
-Each mediator should consist of a **normalisation** sub-components, a **orchestration** sub-component and a **de-normalisation** sub-component. The purpose of each of these are described below.
+Each mediator should consist of a **normalisation** sub-components, an **orchestration** sub-component and a **de-normalisation** sub-component. The purpose of each of these are described below.
 
 _Note: These descriptions are taken the [published thesis](http://www.cair.za.net/research/outputs/open-health-information-mediator-architecture-enabling-interoperability-low-middle) of Ryan Crichton: 'The Open Health Information Mediator: an Architecture for Enabling Interoperability in Low to Middle Income Countries'_
 
 ### Normalisation sub-component
 
-This sub-component transforms the request message contained within a transaction to a normalised state. This normalised state is called the canonical form for that transaction. After this process the transaction data must be in a consistent and predictable format to allow components following this step to process it in a predictable fashion, no matter what format it arrived in. This process consists of two operations. Firstly, an on-ramp transformation is applied. This ensures that the message is transformed into a form that the HIM can process, thus enabling syntactic interoperability for the transaction. For example, if the transaction arrives from a legacy application that only supported exporting data in a custom XML format, this process would ensure that the XML is transformed into the canonical form that the HIM can understand, such as an HL7 version 2 message. Secondly, a translation operation is invoked. This operation is responsible for ensuring the codes and code systems used within the transaction are translated to a standard set of vocabulary or clinical terms, called reference terms, that have a common interpretation by other components of the HIM. This could involve a call to a terminology service to translate and verify that the codes used within the transaction are represented in, or are translated to, known reference terms. In this way semantic interoperability between service requesters and providers is achieved.
+This sub-component transforms the request message contained within a transaction to a normalised state. This normalised state is called the canonical form for that transaction. After this process the transaction data must be in a consistent and predictable format to allow components following this step to process it in a predictable fashion, no matter what format it arrived in. This process consists of two operations. Firstly, an on-ramp transformation is applied. This ensures that the message is transformed into a form that the HIM can process, thus enabling syntactic interoperability for the transaction. For example, if the transaction arrives from a legacy application that only supported exporting data in a custom XML format, this process would ensure that the XML is transformed into the canonical form that the HIM can understand, such as an HL7 version 2 messages. Secondly, a translation operation is invoked. This operation is responsible for ensuring the codes and code systems used within the transaction are translated to a standard set of vocabulary or clinical terms, called reference terms, that have a common interpretation by other components of the HIM. This could involve a call to a terminology service to translate and verify that the codes used within the transaction are represented in, or are translated to, known reference terms. In this way semantic interoperability between service requesters and providers is achieved.
 
 ### Orchestration sub-component
-
 
 This sub-component is responsible for performing implementation-specific orchestration for the current transaction. The aim of the orchestration component is to execute the received transaction and perform any consequent action(s) required for this transaction. This could include zero or more calls to external services as well as the execution of business logic. This component compiles the response for the executed transaction and returns this to the persistence component which forwards the response to the service requester via the interface component. The calls to external systems should be done in parallel where possible to ensure that the orchestration is done quickly and efficiently as possible.
 
 ### De-normalisation sub-component
 
-This sub-component is responsible for transforming or constructing a service request in a format that is understandable to the service provider. This operates in a similar way to the normalisation component except the operations occur in the reverse order. This approach serves to decouple service providers from the orchestration component, which allows for service providers to be easily modified or replaced with minimal impact on the mediation component.
+This sub-component is responsible for transforming or constructing a service request in a format that is understandable to the service provider. This operates similarly to the normalisation component except the operations occur in the reverse order. This approach serves to decouple service providers from the orchestration component, which allows for service providers to be easily modified or replaced with minimal impact on the mediation component.
 
 Separating the mediator into these difference components allows the same orchestration logic to be reused with multiple inbound and outbound message formats. It also allows the normalisation and de-normalisation sub-components to be split out of the mediator and scaled and load balanced independently from it. This is especially useful in high load applications. We recommend that mediation platform such as Mule ESB or Apache Camel be used to ease the construction of such a mediator simpler.
 
@@ -60,14 +59,14 @@ with a JSON body that conforms to the following structure:
     "version": "", // the version of the mediator, if this is incremented the OpenHIM-core will update the channel configuration - expects a semver string
     "name": "", // a human readable name for the mediator
     "defaultChannelConfig": [ // (optional) an array of default channels to add for this mediator
-        { ... }, // a channel object as defined by the OpenHIM-core - see https://github.com/jembi/openhim-core-js/blob/8264a9b7c81a05853c20cd071e379d23d740dd33/src/model/channels.coffee#L23-L56
+        { ... }, // a channel object as defined by the OpenHIM-core - see https://github.com/jembi/openhim-core-js/blob/master/src/model/channels.js#L69-L134
         { ... }
     ],
     "endpoints": [ // (A minimum of 1 endpoint must be defined) an array of endpoints that the mediator can be contacted on
-        { ... }, // a route object as defined by OpenHIM-core - see https://github.com/jembi/openhim-core-js/blob/8264a9b7c81a05853c20cd071e379d23d740dd33/src/model/channels.coffee#L5-L15
+        { ... }, // a route object as defined by OpenHIM-core - see https://github.com/jembi/openhim-core-js/blob/master/src/model/channels.js#L7-L33
         { ... }
     ],
-    "configDefs": [ ... ], // (optional) An array of config definitions of config that can be set in the OpenHIM-console - see https://github.com/jembi/openhim-core-js/blob/master/src/model/mediators.coffee
+    "configDefs": [ ... ], // (optional) An array of config definitions of config that can be set in the OpenHIM-console - see https://github.com/jembi/openhim-core-js/blob/master/src/model/mediators.js
     "config": { "<param1>": "<val1>", "<param2>": "<val2>" } // (optional) Default mediator configuration
 }
 ```
@@ -79,7 +78,7 @@ The `configDefs` property defines an array of configuration definitions that eac
 * `number` - An integer or decimal value
 * `option` - A value from a pre-defined list. If this datatype is use then the `values` property MUST also be used. The `values` property specifies an array of possible values for the parameter.
 * `map` - Key/value pairs. A map is formatted as an object with string values, e.g. `{ "key1": "value1", "key2": "value2" }`. New key/value pairs can be added dynamically.
-* `struct` - A collection of fields that can be of any of type. If a parameter is a struct, then a `template` field MUST be defined. A template is an array with each element defining the individual fields that the struct is made up of. The definition schema is the same as the `configDefs` [schema](https://github.com/jembi/openhim-core-js/blob/master/src/model/mediators.coffee) with the exception that a struct may not recursively define other structs.
+* `struct` - A collection of fields that can be of any of type. If a parameter is a struct, then a `template` field MUST be defined. A template is an array with each element defining the individual fields that the struct is made up of. The definition schema is the same as the `configDefs` [schema](https://github.com/jembi/openhim-core-js/blob/master/src/model/mediators.js) with the exception that a struct may not recursively define other structs.
 * `password` - A string value representing a password or some other protected information. The value of this type will be masked when returned form the OpenHIM API in all but the `heartbeats` API endpoint to reduce the risk of accidental exposure.
 
 A config definition may also specify an `array` property (boolean). If true, then the config can have an array of values. The elements in the array must be of the specified type, e.g. if the config definition is of type `string`, then the config must be an array of strings.
@@ -92,6 +91,7 @@ The OpenHIM-core SHALL respond with an appropriate 5xx status if the mediator re
 
 ##### Basic Settings
 The following is a config definition for basic server settings:
+
 ```js
 {
   ...
@@ -116,7 +116,9 @@ The following is a config definition for basic server settings:
   ]
 }
 ```
+
 Valid config would be:
+
 ```js
 {
   "host": "localhost",
@@ -127,6 +129,7 @@ Valid config would be:
 
 ##### Map example
 A map is a collection of key/value pairs:
+
 ```js
 {
   ...
@@ -139,7 +142,9 @@ A map is a collection of key/value pairs:
   ]
 }
 ```
+
 Valid config would be:
+
 ```js
 {
   "uidMappings": {
@@ -149,10 +154,12 @@ Valid config would be:
   }
 }
 ```
+
 Note that the keys `value1`, `value2`, etc. were not predefined in the definition. The OpenHIM-console allows users to dynamically add key/value pairs for a map.
 
 ##### Struct example
 A struct is a grouping of other types:
+
 ```js
 {
   ...
@@ -185,7 +192,9 @@ A struct is a grouping of other types:
   ]
 }
 ```
+
 Valid config would be:
+
 ```js
 {
   "server": {
@@ -198,6 +207,7 @@ Valid config would be:
 
 ##### Array example
 The following is a config definition for a string array:
+
 ```js
 {
   ...
@@ -212,7 +222,9 @@ The following is a config definition for a string array:
   ]
 }
 ```
+
 Valid config would be:
+
 ```js
 {
   "balancerHosts": [
@@ -224,6 +236,7 @@ Valid config would be:
 ```
 
 Arrays are supported for all types, including structs:
+
 ```js
 {
   ...
@@ -247,7 +260,9 @@ Arrays are supported for all types, including structs:
   ]
 }
 ```
+
 Valid config would be:
+
 ```js
 {
   "balancerHosts": [
@@ -267,7 +282,7 @@ Valid config would be:
 
 ### Return transaction metadata
 
-A mediator **SHOULD** return a structured object that indicates the response that should be returned to the user as well as metadata about the actions that were performed. The mediator is not required to do this however useful information can be returned to the OpenHIM-core in this way. If a structured response is not returned to the OpenHIM-core then what ever is returned to the OpenHIM-core  is pass directly on to the client that make the request.
+A mediator **SHOULD** return a structured object that indicates the response that should be returned to the user as well as metadata about the actions that were performed. The mediator is not required to do this however useful information can be returned to the OpenHIM-core in this way. If a structured response is not returned to the OpenHIM-core then what ever is returned to the OpenHIM-core is passed directly on to the client that made the request.
 
 The structured object should be returned in the HTTP response for each request that the OpenHIM-core forwards to the mediator. If the mediator chooses to return a strucutred response then the mediator MUST return this object with a content-type header with the value: 'application/json+openhim'. If the mediator wants to set a specific content-type to return to the client, they can set this in the response object as a header (see below).
 
@@ -297,10 +312,10 @@ The JSON object returned to the OpenHIM should take the following form:
 
 See the response format above; error details can be included using the `error` field. Although optional, its use is encouraged whenever any internal server errors occur, especially if the connection to an upstream server fails. When included, the OpenHIM will automatically retry the transaction, if the auto-retry option enabled on the channel.
 
-Error details can also be included for orchestrations; see https://github.com/jembi/openhim-core-js/blob/67d9c4c3dc2293bc6aca1d13d7d9a26771136678/src/model/transactions.coffee#L34
+Error details can also be included for orchestrations; see https://github.com/jembi/openhim-core-js/blob/master/src/model/transactions.js#L34
 
 ### (Optional) Send heartbeats and recieve user configuration directly from OpenHIM-core
 
 A mediator **MAY** opt to send heartbeats to the OpenHIM-core to demonstrate its aliveness. The heartbeats also allow it to recieve user specified configuration data and any changes to that configuration in a near real-time fashion.
 
-The mediator can do this by utilising the mediator heartbeats API endpoint of the OpenHIM-core. You can find [details on this endpoint here](/dev-guide/api-ref.html#mediator-heartbeat-endpoint). This API endpoint, if supported by the medaitor, should always be called once at mediator startup using the `config: true` flag to get the initial startup config for the mediator if it exists. There after the API endpoint should be hit at least every 30s (a good number to work with is every 10s) by the mediator to provide the OpenHIM-core with its heartbeat and so that the medaitor can recieve the latest user config as it becomes available.
+The mediator can do this by utilising the mediator heartbeats API endpoint of the OpenHIM-core. You can find [details on this endpoint here](./api-ref.html#mediator-heartbeat-endpoint). This API endpoint, if supported by the medaitor, should always be called once at mediator startup using the `config: true` flag to get the initial startup config for the mediator if it exists. There after the API endpoint should be hit at least every 30s (a good number to work with is every 10s) by the mediator to provide the OpenHIM-core with its heartbeat and so that the medaitor can recieve the latest user config as it becomes available.

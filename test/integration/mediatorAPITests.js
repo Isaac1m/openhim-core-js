@@ -1288,9 +1288,11 @@ describe('API Integration Tests', () => {
           .auth('mediatorTestApp', 'password')
           .expect(200)
 
+        await testUtils.pollCondition(() => TransactionModelAPI.count().then(c => c === 1))
         const res = await TransactionModelAPI.findOne()
+
         res.status.should.be.equal(mediatorResponse.status)
-        res.orchestrations.length.should.be.exactly(1)
+        res.orchestrations.length.should.be.exactly(2)
         res.orchestrations[0].name.should.be.equal(mediatorResponse.orchestrations[0].name)
         should.exist(res.properties)
         res.properties.orderId.should.be.equal(mediatorResponse.properties.orderId)
